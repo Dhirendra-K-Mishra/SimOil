@@ -1,55 +1,64 @@
 import React, { useState } from 'react';
-import NetworkMap from './NetworkMap'; // Importing our new component
-import './App.css'; 
+import NetworkMap from './NetworkMap';
+import './App.css';
 import axios from 'axios';
 
 function App() {
-  
   const [isSimulating, setIsSimulating] = useState(false);
+  const [cycle, setCycle] = useState(0);
 
   const handleAdvanceDay = async () => {
     setIsSimulating(true);
+
     try {
-        
-        await axios.post('http://localhost:5000/api/simulation/advance');
-        
-        window.location.reload();
+      await axios.post('http://localhost:5000/api/simulation/advance', {}, { timeout: 2000 });
     } catch (error) {
-        console.error("Error advancing simulation:", error);
-        alert("Simulation failed. Make sure your backend server is running!");
+      console.warn('Backend unavailable, continuing with local animation.', error);
     } finally {
-        setIsSimulating(false);
+      setCycle((value) => value + 1);
+      window.setTimeout(() => setIsSimulating(false), 700);
     }
   };
 
   return (
-    <div className="app-container" style={{ padding: '20px', fontFamily: 'sans-serif' }}>
-      <header style={{ marginBottom: '20px', textAlign: 'center' }}>
-        <h1>Fuel Supply Chain Simulator</h1>
-        <p>Interactive Network Topology</p>
-        
-        {/* The Simulation Control Button */}
-        <button 
-            onClick={handleAdvanceDay} 
-            disabled={isSimulating}
-            style={{
-                padding: '10px 20px',
-                fontSize: '16px',
-                backgroundColor: isSimulating ? '#6b7280' : '#ef4444',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: isSimulating ? 'not-allowed' : 'pointer',
-                marginTop: '10px',
-                fontWeight: 'bold'
-            }}
-        >
-            {isSimulating ? 'Calculating...' : 'Advance Simulation: 1 Day'}
-        </button>
+    <div className="app-shell">
+      <header className="hero-panel">
+        <div className="hero-copy">
+          <p className="eyebrow">Petroleum Logistics Intelligence</p>
+          <h1>Fuel supply chains rendered as a living network.</h1>
+          <p>
+            One refinery feeds a regional cluster of depots, each supporting roughly 250 to 300 outlets
+            with backup coverage that spans days rather than hours.
+          </p>
+          <div className="hero-actions">
+            <button onClick={handleAdvanceDay} disabled={isSimulating}>
+              {isSimulating ? 'Calculating...' : 'Advance Simulation: 1 Day'}
+            </button>
+            <span className="status-pill">Live-style cluster view</span>
+          </div>
+        </div>
+
+        <div className="hero-metrics">
+          <div className="metric-card">
+            <span className="metric-label">Refinery daily output</span>
+            <strong>4.5M - 5.0M L</strong>
+          </div>
+          <div className="metric-card">
+            <span className="metric-label">Depot storage</span>
+            <strong>10M - 15M L</strong>
+          </div>
+          <div className="metric-card">
+            <span className="metric-label">Outlet cluster size</span>
+            <strong>250 - 300 pumps</strong>
+          </div>
+          <div className="metric-card">
+            <span className="metric-label">Refill cadence</span>
+            <strong>Every 2 - 3 days</strong>
+          </div>
+        </div>
       </header>
-      
-      {/* Mounting the 2D map component here */}
-      <NetworkMap />
+
+      <NetworkMap cycle={cycle} />
     </div>
   );
 }

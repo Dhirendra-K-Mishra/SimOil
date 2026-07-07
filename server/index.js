@@ -9,6 +9,52 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+const performSimulationTick = async () => {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // 1. Refinery Production (4.75M per tick, distributed across daily clock)
+    // In a real-time sim, we scale this down to per-tick production
+    await client.query(`
+            UPDATE nodes SET current_inventory = LEAST(current_inventory + 200000, max_capacity)
+            WHERE type = 'refinery'
+        `);
+
+    // 2. Aggregate Cluster Demand Fulfillment
+    // We simulate the 250+ outlets per depot as a single aggregated sink
+    await client.query(`
+            UPDATE nodes SET current_inventory = GREATEST(current_inventory - 40000, 0)
+            WHERE type = 'depot'
+        `);
+
+    // 3. Simple Allocation: If Depot inventory < 30%, trigger restock shipment
+    const lowDepots = await client.query(`
+            SELECT id FROM nodes WHERE type = 'depot' AND current_inventory < (max_capacity * 0.3)
+        `);
+
+    for (let row of lowDepots.rows) {
+      await client.query(
+        `
+                INSERT INTO shipments (source_id, destination_id, volume, status, dispatch_date)
+                VALUES (1, $1, 2000000, 'en_route', CURRENT_DATE)
+            `,
+        [row.id],
+      );
+    }
+
+    await client.query("COMMIT");
+    console.log("Simulation Tick Processed...");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Tick Failed:", err.message);
+  } finally {
+    client.release();
+  }
+};
+
+setInterval(performSimulationTick, 2000);
+
 app.get("/api/network/state", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM nodes ORDER BY type, id");
