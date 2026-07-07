@@ -6,7 +6,7 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const buildFallbackNetwork = (cycle) => {
   const refinery = {
-    id: 1,
+    id: 1, 
     name: 'North Refinery',
     type: 'refinery',
     inventory: 4.8e6 + cycle * 180000,
