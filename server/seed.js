@@ -57,6 +57,23 @@ async function seedDatabase() {
             }
         }
         console.log('Database successfully overhauled with 730 days of data.');
+        // Allow predicted-only rows: make actual_demand nullable if currently NOT NULL
+        try {
+            await pool.query("ALTER TABLE demand_history ALTER COLUMN actual_demand DROP NOT NULL");
+            console.log('Relaxed demand_history.actual_demand NOT NULL constraint.');
+        } catch (err) {
+            console.warn('Could not modify demand_history constraint (it may already be nullable):', err.message);
+        }
+
+        // Run forecasting script to populate predicted_demand for next days
+        try {
+            const { execSync } = require('child_process');
+            console.log('Running forecast training script...');
+            execSync('python forecast/train_and_insert.py --horizon 14', { stdio: 'inherit' });
+            console.log('Forecast script completed.');
+        } catch (err) {
+            console.error('Forecast script failed (ensure Python and required packages are installed):', err.message);
+        }
     } catch (error) {
         console.error('Seeding error:', error);
     } finally {

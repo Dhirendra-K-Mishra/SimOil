@@ -14,15 +14,29 @@ const performSimulationTick = async () => {
   try {
     await client.query("BEGIN");
 
+    // Advance simulation date by one day and promote predictions to actuals
+    if (global.simulationDate) {
+      const nextDate = new Date(global.simulationDate);
+      nextDate.setDate(nextDate.getDate() + 1);
+      const nextDateStr = nextDate.toISOString().split('T')[0];
+
+      // If predicted_demand exists for this date, copy it into actual_demand
+      await client.query(
+        `UPDATE demand_history SET actual_demand = predicted_demand WHERE date = $1 AND predicted_demand IS NOT NULL`,
+        [nextDateStr],
+      );
+
+      global.simulationDate = nextDateStr;
+      console.log('Simulation advanced to', global.simulationDate);
+    }
+
     // 1. Refinery Production (4.75M per tick, distributed across daily clock)
-    // In a real-time sim, we scale this down to per-tick production
     await client.query(`
             UPDATE nodes SET current_inventory = LEAST(current_inventory + 200000, max_capacity)
             WHERE type = 'refinery'
         `);
 
     // 2. Aggregate Cluster Demand Fulfillment
-    // We simulate the 250+ outlets per depot as a single aggregated sink
     await client.query(`
             UPDATE nodes SET current_inventory = GREATEST(current_inventory - 40000, 0)
             WHERE type = 'depot'
@@ -34,12 +48,13 @@ const performSimulationTick = async () => {
         `);
 
     for (let row of lowDepots.rows) {
+      const dispatchDate = global.simulationDate || new Date().toISOString().split('T')[0];
       await client.query(
         `
                 INSERT INTO shipments (source_id, destination_id, volume, status, dispatch_date)
-                VALUES (1, $1, 2000000, 'en_route', CURRENT_DATE)
+                VALUES (1, $1, 2000000, 'en_route', $2)
             `,
-        [row.id],
+        [row.id, dispatchDate],
       );
     }
 
@@ -53,7 +68,30 @@ const performSimulationTick = async () => {
   }
 };
 
-setInterval(performSimulationTick, 2000);
+setInterval(performSimulationTick, 5000);
+
+// Initialize simulation date to the last date that has an actual_demand
+const initSimulationDate = async () => {
+  try {
+    const res = await pool.query("SELECT MAX(date) AS last_actual FROM demand_history WHERE actual_demand IS NOT NULL");
+    let last = res.rows[0].last_actual;
+    if (!last) {
+      // fallback to today - 1
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      last = d.toISOString().split('T')[0];
+    }
+    global.simulationDate = last;
+    console.log('Simulation date initialized to', global.simulationDate);
+  } catch (err) {
+    console.warn('Failed to initialize simulation date:', err.message);
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    global.simulationDate = d.toISOString().split('T')[0];
+  }
+};
+
+initSimulationDate();
 
 app.get("/api/network/state", async (req, res) => {
   try {
@@ -79,6 +117,38 @@ app.get("/api/demand-history/:nodeId", async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).send("Server Error");
+  }
+});
+
+app.get('/api/forecast/:nodeId', async (req, res) => {
+  try {
+    const { nodeId } = req.params;
+    const horizon = parseInt(req.query.horizon || '14', 10);
+    const result = await pool.query(
+      `SELECT date, predicted_demand FROM demand_history WHERE node_id = $1 AND predicted_demand IS NOT NULL ORDER BY date ASC LIMIT $2`,
+      [nodeId, horizon],
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+});
+
+// Resolve a depot's DB id from a logical index (1-based) so UI can use stable numbering
+app.get('/api/node-id/logical/:index', async (req, res) => {
+  try {
+    const idx = parseInt(req.params.index, 10);
+    if (isNaN(idx) || idx < 1) return res.status(400).send('Invalid index');
+    const result = await pool.query(
+      `SELECT id FROM nodes WHERE type = 'depot' ORDER BY name ASC LIMIT 1 OFFSET $1`,
+      [idx - 1],
+    );
+    if (!result.rows.length) return res.status(404).send('Not found');
+    res.json({ id: result.rows[0].id });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
   }
 });
 

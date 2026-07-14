@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import NetworkMap from './NetworkMap';
+import Forecast from './Forecast';
 import './App.css';
 import axios from 'axios';
 
@@ -11,9 +13,9 @@ function App() {
     setIsSimulating(true);
 
     try {
-      await axios.post('http://localhost:5000/api/simulation/advance', {}, { timeout: 2000 });
+      await axios.post('http://localhost:5000/api/simulation/advance', {}, { timeout: 10000 });
     } catch (error) {
-      console.warn('Backend unavailable, continuing with local animation.', error);
+      console.warn('Backend advance failed or timed out; using local animation.', error?.message || error);
     } finally {
       setCycle((value) => value + 1);
       window.setTimeout(() => setIsSimulating(false), 700);
@@ -21,8 +23,9 @@ function App() {
   };
 
   return (
-    <div className="app-shell">
-      <header className="hero-panel">
+    <BrowserRouter>
+      <div className="app-shell">
+        <header className="hero-panel">
         <div className="hero-copy">
           <p className="eyebrow">Petroleum Logistics Intelligence</p>
           <h1>Fuel supply chains rendered as a living network.</h1>
@@ -56,10 +59,14 @@ function App() {
             <strong>Every 2 - 3 days</strong>
           </div>
         </div>
-      </header>
+        </header>
 
-      <NetworkMap cycle={cycle} />
-    </div>
+        <Routes>
+          <Route path="/" element={<NetworkMap cycle={cycle} />} />
+          <Route path="/forecast/:nodeId" element={<Forecast />} />
+        </Routes>
+      </div>
+    </BrowserRouter>
   );
 }
 

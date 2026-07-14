@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 const formatVolume = (value) => `${(value / 1000000).toFixed(1)}M L`;
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -100,6 +101,7 @@ function NetworkMap({ cycle }) {
   const [network, setNetwork] = useState(() => buildFallbackNetwork(0));
   const [capacitySnapshot, setCapacitySnapshot] = useState(() => buildCapacitySnapshot(buildFallbackNetwork(0), null));
   const [status, setStatus] = useState('Offline demo view');
+  const navigate = useNavigate();
   const previousSnapshotRef = useRef(null);
 
   useEffect(() => {
@@ -231,7 +233,18 @@ function NetworkMap({ cycle }) {
               });
 
               return (
-                <g key={depot.id}>
+                <g
+                  key={depot.id}
+                  onClick={() => {
+                    // Resolve logical depot index -> db id for stable behavior across seeds
+                    const logicalIndex = index + 1;
+                    axios.get(`http://localhost:5000/api/node-id/logical/${logicalIndex}`).then((r) => {
+                      const id = r.data?.id || depot.id;
+                      navigate(`/forecast/${id}`);
+                    }).catch(() => navigate(`/forecast/${depot.id}`));
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
                   <line
                     x1={network.refinery.position.x + 38}
                     y1={network.refinery.position.y}
@@ -379,6 +392,8 @@ function NetworkMap({ cycle }) {
           </div>
         </div>
       </div>
+
+      {/* Forecasts are now on a dedicated page (click depot to open) */}
     </section>
   );
 }
